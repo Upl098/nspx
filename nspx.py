@@ -131,7 +131,7 @@ def extract_file( fp_in, outfile, base, length ):
     
     fp_out.close()
 
-def main( argv, ret_results=False ):
+def main():
     parser = optparse.OptionParser( "usage: %prog [options] file1 file2 ..." )
 
     parser.set_defaults( action=0 )
@@ -149,7 +149,7 @@ def main( argv, ret_results=False ):
     parser.add_option( "-o", "--outdir" , action="store"      , default=None, dest="outdir"  , help="Optionally set output directory for extraction" )
     parser.add_option( "-s", "--silent" , action="store_true" , default=False, dest="silent" , help="Supress info messages" )
 
-    ( options, args ) = parser.parse_args( argv )
+    ( options, args ) = parser.parse_args()
 
     if options.action == 4:
         print( "nspx (NSP eXtractor) v0.2-2" )
@@ -247,4 +247,4 @@ def main( argv, ret_results=False ):
 if __name__ == "__main__":
     if os.path.isdir( TMPDIR ):
         rmtree( TMPDIR )
-    main( sys.argv )
+    main()
