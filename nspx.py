@@ -36,14 +36,15 @@ def main():
 
     parser.add_option_group( actions )
 
-    parser.add_option( "-f", "--file"   , action="store"      , default=None, dest="filename", help="Specify archive file to operate on" )
-    parser.add_option( "-o", "--outdir" , action="store"      , default=None, dest="outdir"  , help="Optionally set output directory for extraction" )
-    parser.add_option( "-s", "--silent" , action="store_true" , default=False, dest="silent" , help="Supress info messages" )
+    parser.add_option( "-f", "--file"   , action="store"      , default=None , dest="filename"    , help="Specify archive file to operate on" )
+    parser.add_option( "-s", "--split"  , action="store_true" , default=False, dest="should_split", help="Split nca files into 4GB parts for FAT32 filesystem" )
+    parser.add_option( "-o", "--outdir" , action="store"      , default=None , dest="outdir"      , help="Optionally set output directory for extraction" )
+    parser.add_option( "-q", "--quiet"  , action="store_true" , default=False, dest="silent"      , help="Supress info messages" )
 
     ( options, args ) = parser.parse_args()
 
     if options.action == 4:
-        print( "nspx (NSP eXtractor) v0.2-3" )
+        print( "nspx (NSP eXtractor) v0.2-4" )
         os._exit( SUCCESS )
     elif options.filename == None:
         print( "Need to specify a filename with '-f'" )
@@ -88,7 +89,7 @@ def main():
             
         elif options.action == 1:
 
-            nspFile.extract_files( args, options.outdir or os.path.splitext( options.filename )[ 0 ] )
+            nspFile.extract_files( args, options.outdir or os.path.splitext( options.filename )[ 0 ], splitFiles=options.should_split )
 
             if not options.silent: print( "Done!" )
 
