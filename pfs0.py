@@ -1,10 +1,13 @@
 import os
+import shutil
 from struct import pack as pk, unpack as upk
 
 #            0x10 = 16            = PFS0 (4bytes) + numFiles (4bytes) + str_table_len (4bytes) + unused (4bytes)
 # numFiles * 0x18 = numFiles * 24 = data_offset (8bytes) + data_size (8bytes) + str_offset (4bytes) + unused (4bytes)
 
 LOGGER = lambda msg: False
+
+FAT32_MAX_SIZE = 4 * 1024 * 1024 * 1024 # 4GB
 
 class PFS0File:
 
@@ -169,8 +172,59 @@ class PFS0File:
         
         return True
     
-    def extract_files( self, fnames, outdir ):
+    def extract_split_file( self, data_offset, data_length, outdir ):
         fp = self.fp
+        
+        if os.path.isdir( outdir ):
+            shutil.rmtree( outdir )
+
+        os.mkdir( outdir )
+        
+        fparts=int(data_length/FAT32_MAX_SIZE)
+        LOGGER( "file will be splitted into %d 4BG parts" % fparts )
+
+        partNum = 0
+
+        fp_out = open( os.path.join( outdir, "{:02}".format( partNum ) ), "wb" )
+
+        goal = data_offset + data_length
+        curPartLen = 0
+
+        LOGGER( "Extracting part %d of %d..." % ( partNum + 1, fparts + 1 ) )
+
+        while 1:
+            rest = goal - fp.tell()
+            rest = 4096 if rest >= 4096 else rest
+
+            curPartLen += rest
+
+            if curPartLen > FAT32_MAX_SIZE:
+                rest = FAT32_MAX_SIZE - ( curPartLen - rest )
+                fp_out.write( fp.read( rest ) )
+                fp_out.close()
+                
+                curPartLen = 0
+                partNum += 1
+                fp_out = open( os.path.join( outdir, "{:02}".format( partNum ) ), "wb" )
+                LOGGER( "Extracting part %d of %d..." % ( partNum + 1, fparts + 1 ) )
+                continue
+            else:
+                if rest < 4096:
+                    fp_out.write( fp.read( rest ) )
+                    break
+                else:
+                    fp_out.write( fp.read( 4096 ) )
+        
+        fp_out.close()
+        return True        
+
+
+
+    
+    def extract_files( self, fnames, outdir, splitFiles=False ):
+        fp = self.fp
+
+        if splitFiles == True: LOGGER( "Info: Will split large files" )
 
         if not "r" in fp.mode:
             raise Exception( "Error: File-handle is not readable" )
@@ -183,16 +237,25 @@ class PFS0File:
         
         if fnames == None or len( fnames ) == 0: # if no files are specified, extract all files
             for f in self.listfiles():
-                outfile = open( os.path.join( outdir, f[ 2 ] ), "wb" )
-                self.extract_file( f[ 0 ], f[ 1 ], outfile )
-                outfile.close()
+                LOGGER( "Extracting '%s'" % f[ 2 ] )
+                if splitFiles == True and f[ 1 ] > FAT32_MAX_SIZE:
+                    splitFileDir = os.path.join( outdir, f[ 2 ] )
+                    self.extract_split_file( f[ 0 ], f[ 1 ], splitFileDir )
+                else:
+                    outfile = open( os.path.join( outdir, f[ 2 ] ), "wb" )
+                    self.extract_file( f[ 0 ], f[ 1 ], outfile )
+                    outfile.close()
         else:
             for f in self.listfiles():
                 if f[ 2 ] in fnames:
                     LOGGER( "Extracting '%s'" % f[ 2 ] )
-                    outfile = open( os.path.join( outdir, f[ 2 ] ), "wb" )
-                    self.extract_file( f[ 0 ], f[ 1 ], outfile )
-                    outfile.close()
+                    if splitFiles == True and f[ 1 ] > FAT32_MAX_SIZE:
+                        splitFileDir = os.path.join( outdir, f[ 2 ] )
+                        self.extract_split_file( f[ 0 ], f[ 1 ], splitFileDir )
+                    else:
+                        outfile = open( os.path.join( outdir, f[ 2 ] ), "wb" )
+                        self.extract_file( f[ 0 ], f[ 1 ], outfile )
+                        outfile.close()
         
         return True
     
