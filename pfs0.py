@@ -1,6 +1,7 @@
 import os
 import shutil
 from struct import pack as pk, unpack as upk
+from typing import IO
 
 #            0x10 = 16            = PFS0 (4bytes) + numFiles (4bytes) + str_table_len (4bytes) + unused (4bytes)
 # numFiles * 0x18 = numFiles * 24 = data_offset (8bytes) + data_size (8bytes) + str_offset (4bytes) + unused (4bytes)
@@ -12,12 +13,22 @@ FAT32_MAX_SIZE = 4 * 1024 * 1024 * 1024 # 4GB
 class PFS0File:
 
     @staticmethod
-    def set_logger( func ):
+    def set_logger( func: callable[[str], None] ):
+        """Sets the logger function
+           to 'func'.
+        """
         global LOGGER
         LOGGER = func
 
     @staticmethod
-    def create_pfs0( pfs0Name, files ):
+    def create_pfs0( pfs0Name: str, files: List[str] ) -> PFS0File:
+        """Creates a pfs0 container and file.
+           The file will be located at 'pfs0Name'
+           and contain all files specified in 'files'.
+
+           This function will return a new PFS0File instance with a fp
+           to the newly created file
+        """
 
         pfs0Name = os.path.abspath( pfs0Name )
 
@@ -55,7 +66,13 @@ class PFS0File:
 
 
     @staticmethod    
-    def __gen_header( argv ):
+    def __gen_header( argv: List[str] ) -> bytes:
+        """ Generates header for pfs0 container.
+            'argv' is a list of strings containing the paths to all files to be included
+
+            Returns the header as a byte sequence
+        """
+
         argc = len( argv )
 
         LOGGER( "Generating header..." )
@@ -88,146 +105,147 @@ class PFS0File:
         
         return header
 
-    def __init__( self, fp ):
+    def __init__( self, fp: IO[bytes] ):
+        """PFS0File constructor
+           
+           Takes a handle to a pfs0 file in reads its header.
+        """
+
         self.fp = fp
 
-        if not "r" in fp.mode:
+        # tests the file handle for "rb" mode
+        if not 'r' in fp.mode:
             raise Exception( "Error: File-handle is not readable" )
         
+        if not 'b' in fp.mode:
+            raise Exception( "Error: Need binary mode on File-handle" )
+
+        self.closed = False
+
+        # read from the beginning of the file
         fp.seek( 0 )
 
-        magic = fp.read( 4 ).decode()
+        magic = fp.read( 4 )
 
-        if magic != 'PFS0':
+        if magic != b'PFS0':
             raise ValueError( "Error: File magic is invalid (expected: 'PFS0', got: '%s')" % magic )
-        
+
+        # information regarding header size        
         self.__number_of_files      = upk( "<I", fp.read( 4 ) )[ 0 ]
-        self.__header_remainder_len = upk( "<I", fp.read( 4 ) )[ 0 ]
+        self.__header_remainder_len = upk( "<I", fp.read( 4 ) )[ 0 ] # string table length
         
         fp.read( 4 )
 
-        self.__files_meta_base   = 0x10
+        # tabe offset containing all filenames
         self.__string_table_base = 0x10 + 0x18 * self.__number_of_files 
 
+        # metadata of files [ ( offset, size, string_table_offset ) ]
         self.__files_meta = []
 
         for n in range( self.__number_of_files ):
-            data_offset   = upk( "<Q", fp.read( 8 ) )[ 0 ]
-            data_size     = upk( "<Q", fp.read( 8 ) )[ 0 ]
-            string_offset = upk( "<I", fp.read( 4 ) )[ 0 ]
+            data_offset   = upk( "<Q", fp.read( 8 ) )[ 0 ]  # offset of file body relative to the body of this file
+            data_size     = upk( "<Q", fp.read( 8 ) )[ 0 ]  # size of the file
+            string_offset = upk( "<I", fp.read( 4 ) )[ 0 ]  # offset of filename relative to the string table
 
             self.__files_meta.append( ( data_offset, data_size, string_offset ) )
 
-            fp.read( 4 )
+            fp.read( 4 )    # skip seperator (4 zero-bytes; test if they are zero?)
         
+        # the remainder of the header only contains the filenames which we don't need right now
         self.__body_base = fp.tell() + self.__header_remainder_len
 
-    def listfiles( self ):  # contains (1) absolute data offset, (2) data len in bytes, (3) filename as string
+    def listfiles( self ) -> List[Tuple[int,int,str]]:
+        """Returns a list containing tuples of the files metadata:\n
+            [( absolute_data_offset, data_size, filename), ...]
+        """
+
+        if self.closed: raise Exception( "File is closed" )
+
         flist = []
 
         for f in self.__files_meta:
-            flist.append( ( self.__body_base + f[ 0 ], f[ 1 ], self.read_filename( f[ 2 ] ) ) )
+            flist.append( ( self.__body_base + f[ 0 ], f[ 1 ], self.__read_filename( f[ 2 ] ) ) )
         
         return flist
     
-    def read_filename( self, offset ):
-        fp = self.fp
+    def __read_filename( self, offset: int ) -> str:
+        """Reads a filename from a relative offset from the string table and returns it"""
 
-        if not "r" in fp.mode:
-            raise Exception( "Error: File-handle is not readable" ) 
+        if self.closed: raise Exception( "File is closed" )
 
-        fp.seek( self.__string_table_base + offset )
+        self.fp.seek( self.__string_table_base + offset )
 
         fname = b''
 
+        # read a NULL-terminated string
         while 1:
-            b = fp.read( 1 )
+            b = self.fp.read( 1 )
 
             if b == b'\x00': break
             fname += b
         
+        # return as str object
         return fname.decode()
     
-    def extract_file( self, data_offset, data_length, fp_out ):
-        fp = self.fp
+    def __extract_file( self, data_offset: int, data_length: int, fp_out: IO[bytes] ) -> bool:
+        """Extract one file from pfs0 container"""
 
-        if not "r" in fp.mode:
-            raise Exception( "Error: File-handle is not readable" )
+        if self.closed: raise Exception( "File is closed" )
 
         if not "w" in fp_out.mode:
             raise Exception( "Error: File-Handle for output file is not writeable" )
 
-        fp.seek( data_offset )
+        self.fp.seek( data_offset )
 
         goal = data_offset + data_length
 
         while 1:
-            rest = goal - fp.tell()
+            rest = goal - self.fp.tell()
 
             if rest < 4096:
-                fp_out.write( fp.read( rest ) )
+                fp_out.write( self.fp.read( rest ) )
                 break
             else:
-                fp_out.write( fp.read( 4096 ) )
+                fp_out.write( self.fp.read( 4096 ) )
         
         return True
     
-    def extract_split_file( self, data_offset, data_length, outdir ):
+    def __extract_split_file( self, data_offset: int, data_length: int, outdir: str ) -> bool:
+        """WIP: Splits large files into 4GB parts """
+
+        if self.closed: raise Exception( "File is closed" )
+
         fp = self.fp
         
+        # remove old extracted files
         if os.path.isdir( outdir ):
             shutil.rmtree( outdir )
 
         os.mkdir( outdir )
         
+        # calculate no. of 4BG chunks to extract
         fparts=int(data_length/FAT32_MAX_SIZE)
         LOGGER( "file will be splitted into %d 4BG parts" % fparts )
 
-        partNum = 0
+        # TODO: Implement parted extraction process
 
-        fp_out = open( os.path.join( outdir, "{:02}".format( partNum ) ), "wb" )
-
-        goal = data_offset + data_length
-        curPartLen = 0
-
-        LOGGER( "Extracting part %d of %d..." % ( partNum + 1, fparts + 1 ) )
-
-        while 1:
-            rest = goal - fp.tell()
-            rest = 4096 if rest >= 4096 else rest
-
-            curPartLen += rest
-
-            if curPartLen > FAT32_MAX_SIZE:
-                rest = FAT32_MAX_SIZE - ( curPartLen - rest )
-                fp_out.write( fp.read( rest ) )
-                fp_out.close()
-                
-                curPartLen = 0
-                partNum += 1
-                fp_out = open( os.path.join( outdir, "{:02}".format( partNum ) ), "wb" )
-                LOGGER( "Extracting part %d of %d..." % ( partNum + 1, fparts + 1 ) )
-                continue
-            else:
-                if rest < 4096:
-                    fp_out.write( fp.read( rest ) )
-                    break
-                else:
-                    fp_out.write( fp.read( 4096 ) )
-        
-        fp_out.close()
-        return True        
-
+        raise NotImplementedError( "Error: This method is yet to be implemented" )
 
 
     
-    def extract_files( self, fnames, outdir, splitFiles=False ):
+    def extract_files( self, fnames: List[str], outdir: str, splitFiles=False ) -> bool:
+        """Extracts one or more files from the container into a directory
+           Warning: splitFiles not implemented yet, don't use
+        """
+
+        # TODO: Maybe create some progress indicator 
+
+        if self.closed: raise Exception( "File is closed" )
+
         fp = self.fp
 
+        # not implemented yet
         if splitFiles == True: LOGGER( "Info: Will split large files" )
-
-        if not "r" in fp.mode:
-            raise Exception( "Error: File-handle is not readable" )
 
         outdir = os.path.abspath( outdir )
 
@@ -240,25 +258,37 @@ class PFS0File:
                 LOGGER( "Extracting '%s'" % f[ 2 ] )
                 if splitFiles == True and f[ 1 ] > FAT32_MAX_SIZE:
                     splitFileDir = os.path.join( outdir, f[ 2 ] )
-                    self.extract_split_file( f[ 0 ], f[ 1 ], splitFileDir )
+                    self.__extract_split_file( f[ 0 ], f[ 1 ], splitFileDir )
                 else:
                     outfile = open( os.path.join( outdir, f[ 2 ] ), "wb" )
-                    self.extract_file( f[ 0 ], f[ 1 ], outfile )
+                    self.__extract_file( f[ 0 ], f[ 1 ], outfile )
                     outfile.close()
         else:
+            # go through all specified files
             for f in self.listfiles():
-                if f[ 2 ] in fnames:
-                    LOGGER( "Extracting '%s'" % f[ 2 ] )
-                    if splitFiles == True and f[ 1 ] > FAT32_MAX_SIZE:
-                        splitFileDir = os.path.join( outdir, f[ 2 ] )
-                        self.extract_split_file( f[ 0 ], f[ 1 ], splitFileDir )
-                    else:
-                        outfile = open( os.path.join( outdir, f[ 2 ] ), "wb" )
-                        self.extract_file( f[ 0 ], f[ 1 ], outfile )
-                        outfile.close()
+                # extract existing files, ignore non-existing files
+                if not f[ 2 ] in fnames:
+                    LOGGER( "File '%s' does not exist!" % f[ 2 ] )
+                    continue
+
+                LOGGER( "Extracting '%s'" % f[ 2 ] )
+
+                if splitFiles == True and f[ 1 ] > FAT32_MAX_SIZE:
+                    # >4GB file should be split
+                    # WIP: doesn't work yet
+                    splitFileDir = os.path.join( outdir, f[ 2 ] )
+                    self.__extract_split_file( f[ 0 ], f[ 1 ], splitFileDir )
+                else:
+                    # extract like normal
+                    outfile = open( os.path.join( outdir, f[ 2 ] ), "wb" )
+                    self.__extract_file( f[ 0 ], f[ 1 ], outfile )
+                    outfile.close()
         
         return True
     
-    def close( self ):
+    def close( self ) -> None:
+        """Closes file"""
+
         LOGGER( "Closing file." )
         self.fp.close()
+        self.closed = True
