@@ -1,3 +1,10 @@
+"""
+    Copyright (c) 2018, Alais Mono
+    Everyone is permitted to copy and distribute verbatim copies of this license document
+
+    - p.s.: python2/3 both seem to work
+"""
+
 import os
 import shutil
 from struct import pack as pk, unpack as upk
