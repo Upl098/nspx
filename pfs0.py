@@ -206,15 +206,19 @@ class PFS0File:
 
         goal = data_offset + data_length
 
-        while 1:
-            rest = goal - self.fp.tell()
+        try:
+            while 1:
+                rest = goal - self.fp.tell()
 
-            if rest < 4096:
-                fp_out.write( self.fp.read( rest ) )
-                break
-            else:
-                fp_out.write( self.fp.read( 4096 ) )
-        
+                if rest < 4096:
+                    fp_out.write( self.fp.read( rest ) )
+                    break
+                else:
+                    fp_out.write( self.fp.read( 4096 ) )
+        except:
+            print( "Could not extract file! Are we out of space?" )
+            return False
+
         return True
     
     def __extract_split_file( self, data_offset: int, data_length: int, outdir: str ) -> bool:
@@ -230,15 +234,44 @@ class PFS0File:
 
         os.mkdir( outdir )
         
-        # calculate no. of 4BG chunks to extract
-        fparts=int(data_length/FAT32_MAX_SIZE)
-        LOGGER( "file will be splitted into %d 4BG parts" % fparts )
+        splitSize = 0xFFFF0000 # 4,294,901,760 bytes
+        chunkSize = 0x8000 # 32,768 bytes
 
-        # TODO: Implement parted extraction process
+        fparts    = int( data_length / splitSize )
 
-        raise NotImplementedError( "Error: This method is yet to be implemented" )
+        LOGGER( "Will split file into %d 4GiB parts" % ( fparts + 1 ) )
 
+        fp.seek( data_offset )
 
+        rest = data_length
+
+        for part in range( fparts + 1 ):
+            psize = 0
+
+            LOGGER( "Extracting %d of %d " % ( part + 1, fparts + 1 ) )
+
+            pname = os.path.join( outdir, '{:02}'.format( part ) )
+
+            try:
+                with open( pname, "wb" ) as fpo:
+                    if rest > splitSize:
+                        while psize < splitSize:
+                            fpo.write( fp.read( chunkSize ) )
+                            psize += chunkSize
+                        rest -= splitSize
+                    else:
+                        while psize < rest:
+                            fpo.write( fp.read( chunkSize ) )
+                            psize += chunkSize
+            except:
+                LOGGER( "Could not extract filepart! Are we out of space?" )
+                return False
+
+            LOGGER( "Part %d done! " % ( part + 1 ) )
+        
+        LOGGER( "Extracted all parts successfully!" )
+
+        return True
     
     def extract_files( self, fnames: List[str], outdir: str, splitFiles=False ) -> bool:
         """Extracts one or more files from the container into a directory
@@ -282,13 +315,13 @@ class PFS0File:
 
                 if splitFiles == True and f[ 1 ] > FAT32_MAX_SIZE:
                     # >4GB file should be split
-                    # WIP: doesn't work yet
+                    # WIP: maybe works?
                     splitFileDir = os.path.join( outdir, f[ 2 ] )
-                    self.__extract_split_file( f[ 0 ], f[ 1 ], splitFileDir )
+                    assert self.__extract_split_file( f[ 0 ], f[ 1 ], splitFileDir ) is True, "Parted file extraction failed"
                 else:
                     # extract like normal
                     outfile = open( os.path.join( outdir, f[ 2 ] ), "wb" )
-                    self.__extract_file( f[ 0 ], f[ 1 ], outfile )
+                    assert self.__extract_file( f[ 0 ], f[ 1 ], outfile ) is True, "File extraction failed!"
                     outfile.close()
         
         return True
