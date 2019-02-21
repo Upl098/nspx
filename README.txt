@@ -1,4 +1,4 @@
-nspx 0.2-5 (NSP eXtractor)
+nspx 0.2-6 (NSP eXtractor)
 	extracts nintendo switch software packages (*.nsp-files)
 
 Requirements:
