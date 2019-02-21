@@ -20,7 +20,9 @@ NO_ACTION     = 3
 NO_INFILES    = 4
 ERROR         = 255
 
-TMPDIR = os.path.abspath( ".nspx.tmp" )
+# Globals
+TMPDIR         = os.path.abspath( ".nspx.tmp" )
+VERSION_STRING = "v0.2-6d1"
 
 def main():
     parser = optparse.OptionParser( "usage: %prog [options] file1 file2 ..." )
@@ -44,7 +46,7 @@ def main():
     ( options, args ) = parser.parse_args()
 
     if options.action == 4:
-        print( "nspx (NSP eXtractor) v0.2-4" )
+        print( "nspx (NSP eXtractor) %s" % VERSION_STRING )
         os._exit( SUCCESS )
     elif options.filename == None:
         print( "Need to specify a filename with '-f'" )
