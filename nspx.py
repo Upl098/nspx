@@ -22,7 +22,7 @@ ERROR         = 255
 
 # Globals
 TMPDIR         = os.path.abspath( ".nspx.tmp" )
-VERSION_STRING = "v0.2-6d1"
+VERSION_STRING = "v0.2-6d2"
 
 def main():
     parser = optparse.OptionParser( "usage: %prog [options] file1 file2 ..." )
@@ -46,60 +46,60 @@ def main():
     ( options, args ) = parser.parse_args()
 
     if options.action == 4:
-        print( "nspx (NSP eXtractor) %s" % VERSION_STRING )
+        sys.stdout.write( "nspx (NSP eXtractor) %s\n" % VERSION_STRING )
         os._exit( SUCCESS )
     elif options.filename == None:
-        print( "Need to specify a filename with '-f'" )
+        sys.stdout.write( "Need to specify a filename with '-f'\n" )
         os._exit( NO_FILENAME )
     elif not os.path.isfile( options.filename ) and options.action != 3:
-        print( "There is no such file '%s'" % options.filename )
+        sys.stdout.write( "There is no such file '%s'\n" % options.filename )
         os._exit( NO_SUCH_FILE )
 
-    if not options.silent: PFS0File.set_logger( lambda msg: sys.stdout.write( '%s\n' % msg ) )
+    if not options.silent: PFS0File.set_logger()
 
     if options.action == 0:
-        print( "Nothing to do" )
+        sys.stdout.write( "Nothing to do\n" )
         os._exit( NO_ACTION )
     elif options.action == 3:
         if len( args ) == 0:
-            print( "Nothing to do" )
+            sys.stdout.write( "Nothing to do\n" )
             os._exit( NO_INFILES )
         
         for name in args:
             if not os.path.isfile( os.path.abspath( name ) ):
-                print( "No such file '%s'" % name )
+                sys.stdout.write( "No such file '%s'\n" % name )
                 os._exit( NO_SUCH_FILE )
 
         PFS0File.create_pfs0( options.filename, args ).close()
         os._exit( SUCCESS )
     
     try:
-        nspFile = PFS0File( open( options.filename, "rb" ) )
+        nspFile = PFS0File( options.filename )
 
         if options.action == 2:
-            print( "Files in '%s':" % options.filename )
+            sys.stdout.write( "Files in '%s':\n" % options.filename )
             
             flist = nspFile.listfiles()
 
-            fnames, fsizes = [ f[ 2 ] for f in flist ], [ str( f[ 1 ] ) for f in flist ]
+            fnames, fsizes = [ f[ 0 ] for f in flist ], [ str( f[ 1 ] ) for f in flist ]
 
             maxName = len( max( fnames, key=len ) )
             maxSize = len( max( fsizes, key=len ) )
             
             for n in range( len( fnames ) ):
-                print( "\t%s : %s bytes" % ( fnames[ n ].ljust( maxName ), fsizes[ n ].rjust( maxSize ) ) )
+                sys.stdout.write( "\t%s : %s bytes\n" % ( fnames[ n ].ljust( maxName ), fsizes[ n ].rjust( maxSize ) ) )
             
         elif options.action == 1:
 
             nspFile.extract_files( args, options.outdir or os.path.splitext( options.filename )[ 0 ], splitFiles=options.should_split )
 
-            if not options.silent: print( "Done!" )
+            if not options.silent: sys.stdout.write( "Done!\n" )
 
         nspFile.close()
 
         os._exit( SUCCESS )
     except Exception as ex:
-        print( ex )
+        sys.stdout.write( "%s\n" % repr( ex ) )
         os._exit( ERROR )
 
 if __name__ == "__main__":
