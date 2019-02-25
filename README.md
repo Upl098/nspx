@@ -18,6 +18,19 @@ Syntax:
 - `./nspx.py -af example.nsp icon.jpg` - creates new archive (cannot append files to existing archive, yet)
 
 Changes:
+- in v0.2-6d2:
+  - changed 'pfs0.py':
+  	- changed logger function requirements:
+		def logger_fn( log_level: str, msg: str ) -> any
+	- PFS0File contructor now takes a pathname instead of a file object
+	- PFS0File constructor now accepts a custom logger function, following above requirements
+	- PFS0File constructor now stores filenames in memory, instead of reading it per use
+	- PFS0File listfiles changed format list( tuple( file_name: str, file_size: int, file_offset: int ), ... )
+	- Added update method to PFS0File, that updates file information
+	- renamed a lot of variables
+  - functionality remains the same
+- in v0.2-6d1:
+  - Readded splitting using a rewritten function
 - in v0.2-5:
   - Added some docstring and comments to "pfs0.py"
   - removed splitted extracting as it doesn't work yet
